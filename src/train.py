@@ -14,7 +14,7 @@ def main() -> None:
     os.makedirs("models", exist_ok=True)
     os.makedirs("reports", exist_ok=True)
 
-    # Always train from processed features (not raw)
+    # Build features if not present
     features_path = "data/processed/features.csv"
     if not os.path.exists(features_path):
         from .preprocess import main as preprocess_main
@@ -22,16 +22,27 @@ def main() -> None:
 
     df = pd.read_csv(features_path)
 
+    # --- Robustness: if features file exists but columns are missing, rebuild it ---
+    required_cols = {
+        "sales",
+        "promo",
+        "dow",
+        "month",
+        "day",
+        "lag_1",
+        "lag_7",
+        "roll_7",
+        "roll_14",
+    }
+    if not required_cols.issubset(set(df.columns)):
+        from .preprocess import main as preprocess_main
+
+        preprocess_main()
+        df = pd.read_csv(features_path)
+
+    # Features / target
     target = "sales"
     feature_cols = ["promo", "dow", "month", "day", "lag_1", "lag_7", "roll_7", "roll_14"]
-
-    # Safety check (prevents the KeyError you hit earlier)
-    missing = [c for c in feature_cols + [target] if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"Missing columns in {features_path}: {missing}. "
-            "Run: python -m src.preprocess"
-        )
 
     X = df[feature_cols]
     y = df[target]
@@ -54,7 +65,12 @@ def main() -> None:
     mae = mean_absolute_error(y_test, preds)
 
     # Save predictions
-    out_pred = pd.DataFrame({"sales": y_test.values, "prediction": preds})
+    out_pred = pd.DataFrame(
+        {
+            "sales": y_test.values,
+            "prediction": preds,
+        }
+    )
     pred_path = "reports/predictions.csv"
     out_pred.to_csv(pred_path, index=False)
 
